@@ -8,8 +8,8 @@ info:
       <li><b>Auth</b> – challenge/verify flow for JWT issuance.</li>
       <li><b>Project settings</b> – fetch current project settings.</li>
       <li><b>User configuration</b> – register or update token-level user-rebalancer settings and fetch current wallet configs.</li>
-      <li><b>Deposits</b> – create deposit intents, receive tracking IDs, and poll for completion.</li>
-      <li><b>Withdrawals</b> – submit signed withdrawal requests and monitor status updates.</li>
+      <li><b>Deposits</b> – create deposit intents, receive tracking IDs, and poll status through PROCESSING -> BRIDGING (cross-chain only) -> SUCCESS/FAILED.</li>
+      <li><b>Withdrawals</b> – submit signed withdrawal requests, receive tracking IDs, and monitor status PROCESSING -> SUCCESS/FAILED.</li>
       <li><b>Balances</b> – query wallet-level balances and withdraw details, as well as balances in bridge progress.</li>
       <li><b>Rewards</b> – aggregated rewards and claim details per wallet.</li>
       <li><b>Pools</b> – list supported protocols (Aave, Morpho, Euler, etc.), their pools, APY breakdowns, and TVL snapshots.</li>
@@ -87,17 +87,16 @@ paths:
         1. JWT verification to ensure the caller owns the specified wallet
         2. Request validation (chain, token, amount, address, signature/approval requirements)
         3. Deposit request is queued for processing with a unique tracking ID
-        4. Request is cached with a 5-minute TTL
-        5. Returns immediately tracking ID and "PROCESSING" status.
-        6. Use `GET /v1/deposits/{trackingId}`` to monitor the deposit progress
+        4. Returns immediately tracking ID
+        5. Use `GET /v1/deposits/{trackingId}` to monitor the deposit progress
 
         ## Response
 
         Returns a **tracking ID** that can be used to poll the deposit status. The tracking ID is:
         - A randomly generated UUID
 
-        The tracking ID is valid for 5 minutes and can be used with the status endpoint 
-        to check if the deposit was successful, failed, or is still processing.
+        The tracking ID can be used with the status endpoint 
+        to check if the deposit was successful, failed, is still processing or is bridging.
 
         ## Source of Funds — User's Own Wallet ERC20 Balance
 
@@ -257,15 +256,18 @@ paths:
 
         Please be aware that if you see failed state, it can be also due to high gas fees, max allowed is 1 USD in gas fees, otherwise it will fail.
 
-        **Status Values:**
-        - `PROCESSING`: Deposit is being processed on the blockchain
-        - `SUCCESS`: Deposit has been successfully completed and funds are in the protocol
-        - `FAILED`: Deposit transaction failed (e.g., insufficient gas, transaction reverted)
+        **Status Values** (returned in `status`):
+        - `PROCESSING`: Deposit is queued or being handled on the source chain.
+        - `BRIDGING` (cross-chain only): Source-side funds movement succeeded and is bridging to the destination chain. Same-chain deposits go straight to final `SUCCESS` or `FAILED` status.
+        - `SUCCESS`: Deposit has been successfully completed and funds are in the protocol.
+        - `FAILED`: Deposit transaction has failed (e.g., insufficient gas, transaction reverted).
+
+        The API only exposes the four values above. Any other internal persistence state is mapped to `PROCESSING` for this response until the flow resolves.
 
         **Response Details:**
         When successful, the response includes:
-        - Current deposit status
-        - Target protocol name (e.g., "Aave", "Compound") where funds were deposited
+        - Current deposit status ("SUCCESS")
+        - Target protocol name (e.g., "Aave", "Morpho", "Euler") where funds were deposited
         - Pool/vault contract address receiving the funds
         - Blockchain network where the deposit occurred
 
@@ -274,8 +276,7 @@ paths:
         - Verify successful completion before proceeding with other operations
         - Display real-time status updates to users in your application
 
-        **Note:** Tracking IDs expire after 5 minutes. If you receive a error code, 
-        the tracking ID either doesn't exist or has been purged from the system.
+        **Note:** If you receive a error code, the tracking ID is probably invalid or no deposit exists for that ID.
 
         **Rate limiting**: 1 request per 3 seconds per client IP. Excess requests receive HTTP `429` with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers (see `RateLimitExceeded` response).
       operationId: getDepositStatus
@@ -298,6 +299,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DepositStatusResponse"
+              examples:
+                processing:
+                  summary: Deposit picked up, waiting for on-chain execution
+                  value:
+                    status: "PROCESSING"
+                    protocol: null
+                    pool: null
+                    chain: "base"
+                bridging:
+                  summary: Cross-chain deposit — source tx done, bridge in progress
+                  description: Details of the target pool, protocol and chain.
+                  value:
+                    status: "BRIDGING"
+                    protocol: "Aave"
+                    pool: "0xc47b8C00b0f69a36fa203Ffeac0334874574a8Ac"
+                    chain: "base"
+                success:
+                  summary: Deposit completed successfully
+                  value:
+                    status: "SUCCESS"
+                    protocol: "Aave"
+                    pool: "0xc47b8C00b0f69a36fa203Ffeac0334874574a8Ac"
+                    chain: "base"
+                failed:
+                  summary: Deposit failed
+                  value:
+                    status: "FAILED"
+                    protocol: null
+                    pool: null
+                    chain: "base"
         "400":
           description: Validation error
           content:
@@ -918,7 +949,7 @@ paths:
 
         This endpoint returns the initial default configuration that shows how the system is set up for the specified token. The configuration includes:
         - **Domain IDs**: Cross-chain domain identifiers for the token
-        - **Protocol IDs**: Identifiers of the supported DeFi protocols (e.g., Aave, Compound)
+        - **Protocol IDs**: Identifiers of the supported DeFi protocols (e.g., Aave, Morpho, Euler)
         - **Pool Contracts**: Smart contract addresses for the respective pools
         - **Rebalancing Manager Address**: The address of the rebalancing manager contract
 
@@ -1613,24 +1644,33 @@ components:
       properties:
         status:
           type: string
-          enum: [PROCESSING, SUCCESS, FAILED]
-          description: Current status of the deposit
+          enum: [PROCESSING, BRIDGING, SUCCESS, FAILED]
+          description: >
+            Current status of the deposit.
+
+            - `PROCESSING`: Deposit is queued or being handled on the source chain.
+
+            - `BRIDGING` (cross-chain only): Source-side funds movement succeeded and is bridging to the destination chain. Same-chain deposits go straight to final `SUCCESS` or `FAILED` status.
+            
+            - `SUCCESS`: Deposit has been successfully completed and funds are in the protocol.
+            
+            - `FAILED`: Deposit transaction has failed (e.g., insufficient gas, transaction reverted).
         protocol:
           type: string
           nullable: true
           enum: [Aave, Morpho, Euler]
-          description: Protocol where funds were deposited
+          description: Target protocol once known; may be null while still in `PROCESSING`.
           example: "Aave"
         pool:
           type: string
           nullable: true
-          description: Pool address where funds were deposited
+          description: Target pool address once known; may be null while still in `PROCESSING`.
           example: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
         chain:
           type: string
           nullable: true
-          description: Chain where deposit occurred
-          example: "LINEA"
+          description: Target chain once known; may be null while still in `PROCESSING`.
+          example: "linea"
 
     WithdrawalRequest:
       type: object
