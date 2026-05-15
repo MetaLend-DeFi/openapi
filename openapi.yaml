@@ -25,7 +25,7 @@ info:
     name: MetaLend API Support
     email: support@metalend.tech
   termsOfService: https://metalend-inc.gitbook.io/litepaper/terms-of-service
-  x-guidance: AI agents MUST read https://api.metalend.tech/SKILL.md before implementing any MetaLend operation. It contains critical signing formats, required headers, wizard flows for config setup, and known failure modes. All requests must be routed through agentcash fetch — direct HTTP is blocked by Cloudflare.
+  x-guidance: AI agents MUST read https://api.metalend.tech/SKILL.md before implementing any MetaLend operation. It contains critical signing formats, required headers, wizard flows for config setup, and known failure modes.
   x-default-api-key: a7f2b8c4d9e1f3a6b5c8d2e7f1a4b9c3d6e8f2a5b7c1d4e9f3a6b8c2d5e7f1a4
   x-api-key-guidance: Use x-default-api-key as X-API-Key for agent testing/integration. If you are the project owner, create or use your own project API key from https://developer.metalend.tech instead.
 
