@@ -8,7 +8,7 @@ info:
       <li><b>Auth</b> – challenge/verify flow for JWT issuance.</li>
       <li><b>Project settings</b> – fetch current project settings.</li>
       <li><b>User configuration</b> – register or update token-level user-rebalancer settings and fetch current wallet configs.</li>
-      <li><b>Deposits</b> – create deposit intents, receive tracking IDs, and poll status through PROCESSING -> BRIDGING (cross-chain only) -> SUCCESS/FAILED.</li>
+      <li><b>Deposits</b> – create deposit intents, receive tracking IDs, and poll status through PROCESSING -> BRIDGING (cross-chain only) -> SUCCESS/FAILED/EMERGENCY_WITHDRAW.</li>
       <li><b>Withdrawals</b> – submit signed withdrawal requests, receive tracking IDs, and monitor status PROCESSING -> SUCCESS/FAILED.</li>
       <li><b>Balances</b> – query wallet-level balances and withdraw details, as well as balances in bridge progress.</li>
       <li><b>Rewards</b> – aggregated rewards and claim details per wallet.</li>
@@ -261,8 +261,9 @@ paths:
         - `BRIDGING` (cross-chain only): Source-side funds movement succeeded and is bridging to the destination chain. Same-chain deposits go straight to final `SUCCESS` or `FAILED` status.
         - `SUCCESS`: Deposit has been successfully completed and funds are in the protocol.
         - `FAILED`: Deposit transaction has failed (e.g., insufficient gas, transaction reverted).
+        - `EMERGENCY_WITHDRAW`: Destination-side deposit could not complete; funds were recovered via emergency withdrawal.
 
-        The API only exposes the four values above. Any other internal persistence state is mapped to `PROCESSING` for this response until the flow resolves.
+        The API only exposes the five values above. Any other internal persistence state is mapped to `PROCESSING` for this response until the flow resolves.
 
         **Response Details:**
         When successful, the response includes:
@@ -328,6 +329,13 @@ paths:
                     status: "FAILED"
                     protocol: null
                     pool: null
+                    chain: "base"
+                emergencyWithdraw:
+                  summary: Destination deposit failed — funds emergency-withdrawn
+                  value:
+                    status: "EMERGENCY_WITHDRAW"
+                    protocol: "Aave"
+                    pool: "0xc47b8C00b0f69a36fa203Ffeac0334874574a8Ac"
                     chain: "base"
         "400":
           description: Validation error
@@ -1644,7 +1652,7 @@ components:
       properties:
         status:
           type: string
-          enum: [PROCESSING, BRIDGING, SUCCESS, FAILED]
+          enum: [PROCESSING, BRIDGING, SUCCESS, FAILED, EMERGENCY_WITHDRAW]
           description: >
             Current status of the deposit.
 
@@ -1655,6 +1663,8 @@ components:
             - `SUCCESS`: Deposit has been successfully completed and funds are in the protocol.
             
             - `FAILED`: Deposit transaction has failed (e.g., insufficient gas, transaction reverted).
+
+            - `EMERGENCY_WITHDRAW`: Destination-side deposit could not complete; funds were recovered via emergency withdrawal.
         protocol:
           type: string
           nullable: true
