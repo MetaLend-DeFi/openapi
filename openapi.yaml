@@ -122,6 +122,12 @@ paths:
         - Requires JWT authentication via JWT token in the Authorization header
         - The JWT must contain the same wallet address as specified in the request body
 
+        ## Maintenance — deposits paused
+
+        MetaLend can temporarily pause **new** deposit creation while other API features (withdrawals, balances, config, pools, etc.) stay available.
+
+        When paused, this endpoint returns **`503 Service Unavailable`** with `internalCode` **`DEPOSITS_PAUSED`** and does not create a deposit or return a tracking ID.
+
         ## Processing Flow
 
         1. Check whether deposits are paused
@@ -285,7 +291,14 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
-          $ref: "#/components/responses/ServiceUnavailable"
+          description: Service unavailable — deposits paused (maintenance)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                depositsPaused:
+                  $ref: "#/components/examples/DepositsPaused"
 
   /v1/deposits/{trackingId}:
     get:
@@ -3582,6 +3595,15 @@ components:
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
+    DepositsPaused:
+      summary: Deposits temporarily paused (maintenance)
+      value:
+        code: "SERVICE_UNAVAILABLE"
+        internalCode: "DEPOSITS_PAUSED"
+        message: "Deposits are temporarily paused"
+        requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
+        retryAfterSeconds: null
+
   responses:
     UnauthorizedNoHeader:
       description: No authorization header provided
@@ -3688,6 +3710,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           examples:
+            DepositsPaused:
+              $ref: "#/components/examples/DepositsPaused"
             Blockchain Unavailable:
               summary: Blockchain unavailable
               value:
