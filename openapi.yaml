@@ -8,7 +8,7 @@ info:
       <li><b>Auth</b> – challenge/verify flow for JWT issuance.</li>
       <li><b>Project settings</b> – fetch current project settings.</li>
       <li><b>User configuration</b> – register or update token-level user-rebalancer settings and fetch current wallet configs.</li>
-      <li><b>Deposits</b> – create deposit intents, receive tracking IDs, and poll status through PROCESSING -> BRIDGING (cross-chain only) -> SUCCESS/FAILED/EMERGENCY_WITHDRAW.</li>
+      <li><b>Deposits</b> – create deposit intents, receive tracking IDs, and poll status through PROCESSING -> BRIDGING (cross-chain only) -> SUCCESS/FAILED/EMERGENCY_WITHDRAW. New deposits may return <b>503</b> with <b>DEPOSITS_PAUSED</b> during maintenance.</li>
       <li><b>Withdrawals</b> – submit signed withdrawal requests, receive tracking IDs, and monitor status PROCESSING -> SUCCESS/FAILED.</li>
       <li><b>Balances</b> – query wallet-level balances and withdraw details, as well as balances in bridge progress.</li>
       <li><b>Rewards</b> – aggregated rewards and claim details per wallet.</li>
@@ -124,11 +124,12 @@ paths:
 
         ## Processing Flow
 
-        1. JWT verification to ensure the caller owns the specified wallet
-        2. Request validation (chain, token, amount, address, signature/approval requirements)
-        3. Deposit request is queued for processing with a unique tracking ID
-        4. Returns immediately tracking ID
-        5. Use `GET /v1/deposits/{trackingId}` to monitor the deposit progress
+        1. Check whether deposits are paused
+        2. JWT verification to ensure the caller owns the specified wallet
+        3. Request validation (chain, token, amount, address, signature/approval requirements)
+        4. Deposit request is queued for processing with a unique tracking ID
+        5. Returns immediately tracking ID
+        6. Use `GET /v1/deposits/{trackingId}` to monitor the deposit progress
 
         ## Response
 
