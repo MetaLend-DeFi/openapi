@@ -8,7 +8,7 @@ info:
       <li><b>Auth</b> – challenge/verify flow for JWT issuance.</li>
       <li><b>Project settings</b> – fetch current project settings.</li>
       <li><b>User configuration</b> – register or update token-level user-rebalancer settings and fetch current wallet configs.</li>
-      <li><b>Deposits</b> – create deposit intents, receive tracking IDs, and poll for completion.</li>
+      <li><b>Deposits</b> – create deposit intents, receive tracking IDs, and poll for completion. New deposits may return <b>503</b> with <b>DEPOSITS_PAUSED</b> during maintenance.</li>
       <li><b>Withdrawals</b> – submit signed withdrawal requests and monitor status updates.</li>
       <li><b>Balances</b> – query wallet-level balances and withdraw details, as well as balances in bridge progress.</li>
       <li><b>Rewards</b> – aggregated rewards and claim details per wallet.</li>
@@ -122,14 +122,21 @@ paths:
         - Requires JWT authentication via JWT token in the Authorization header
         - The JWT must contain the same wallet address as specified in the request body
 
+        ## Maintenance — deposits paused
+
+        MetaLend can temporarily pause **new** deposit creation while other API features (withdrawals, balances, config, pools, etc.) stay available.
+
+        When paused, this endpoint returns **`503 Service Unavailable`** with `internalCode` **`DEPOSITS_PAUSED`** and does not create a deposit or return a tracking ID.
+
         ## Processing Flow
 
-        1. JWT verification to ensure the caller owns the specified wallet
-        2. Request validation (chain, token, amount, address, signature/approval requirements)
-        3. Deposit request is queued for processing with a unique tracking ID
-        4. Request is cached with a 5-minute TTL
-        5. Returns immediately tracking ID and "PROCESSING" status.
-        6. Use `GET /v1/deposits/{trackingId}`` to monitor the deposit progress
+        1. Check whether deposits are paused
+        2. JWT verification to ensure the caller owns the specified wallet
+        3. Request validation (chain, token, amount, address, signature/approval requirements)
+        4. Deposit request is queued for processing with a unique tracking ID
+        5. Request is cached with a 5-minute TTL
+        6. Returns immediately tracking ID and "PROCESSING" status.
+        7. Use `GET /v1/deposits/{trackingId}`` to monitor the deposit progress
 
         ## Response
 
@@ -285,7 +292,14 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
-          $ref: "#/components/responses/ServiceUnavailable"
+          description: Service unavailable — deposits paused (maintenance)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                depositsPaused:
+                  $ref: "#/components/examples/DepositsPaused"
 
   /v1/deposits/{trackingId}:
     get:
@@ -3531,6 +3545,15 @@ components:
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
+    DepositsPaused:
+      summary: Deposits temporarily paused (maintenance)
+      value:
+        code: "SERVICE_UNAVAILABLE"
+        internalCode: "DEPOSITS_PAUSED"
+        message: "Deposits are temporarily paused"
+        requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
+        retryAfterSeconds: null
+
   responses:
     UnauthorizedNoHeader:
       description: No authorization header provided
@@ -3637,6 +3660,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           examples:
+            DepositsPaused:
+              $ref: "#/components/examples/DepositsPaused"
             Blockchain Unavailable:
               summary: Blockchain unavailable
               value:
