@@ -1207,6 +1207,8 @@ paths:
         Retrieves aggregated rewards data for the specified wallet address across 
         supported reward sources (currently Merkle-based rewards).
 
+        After a successful claim on a specific chain, pass `reloadChain` with the human-readable chain name (e.g. `base`, `arbitrum`) to force a Merkl cache refresh for that chain.
+
         **How to claim rewards — the `claimTransaction` is pre-built, just send it.**
 
         Each `RewardItem` with claimable rewards includes a non-null `claimTransaction` 
@@ -1460,6 +1462,23 @@ paths:
             type: string
             pattern: "^0x[a-fA-F0-9]{40}$"
           example: "0x1234567890123456789012345678901234567890"
+        - name: reloadChain
+          in: query
+          required: false
+          description: >
+            After claiming rewards on a specific chain, pass the chain name
+            to force Merkl cache refresh for that chain. Omit for normal cached fetch.
+          schema:
+            type: string
+            enum:
+              - ethereum
+              - base
+              - polygon
+              - arbitrum
+              - avalanche
+              - optimism
+              - linea
+          example: base
       responses:
         "200":
           description: Bridge balances retrieved successfully
