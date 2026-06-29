@@ -1561,6 +1561,8 @@ components:
         chain:
           type: string
           description: The blockchain network. Defaults to "ETHEREUM" if omitted.
+          nullable: true
+          default: "ETHEREUM"
           enum:
             - ETHEREUM
             - BASE
