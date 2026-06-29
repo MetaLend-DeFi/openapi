@@ -776,9 +776,7 @@ paths:
 
         The signature must be 132 characters long (0x + 130 hex characters) and must be signed by the wallet address in the `walletAddress` field.
         
-        **Smart Contract Wallets / ERC-6492**: The optional `chain` parameter provides signature validation context for predeploy smart contract wallets (ERC-6492).
-        Set this when the signer is a smart contract wallet that may not be deployed yet on-chain. If not needed, leave `chain` as `null`.
-        When `chain` is set for contract-wallet validation, all `domainIds` must belong to that same chain (mixed-chain domain IDs are rejected).
+        **Smart Contract Wallets / ERC-6492**: For contract wallet signatures, the backend validates the configuration signature on every chain contained within the `domainIds`. If the signature is rejected on any of those chains, the entire configuration is rejected. The error response will indicate which domain IDs were rejected: `"Contract wallets configs can only contain chains verified by supported signature. Found rejected domain IDs: <rejectedIds>"`.
 
         **Include Rewards APY**: The optional `includeRewardsApy` boolean flag (default: `true`) determines whether reward APYs should be included in APY calculations during rebalancing decisions.
 
@@ -813,7 +811,6 @@ paths:
               requiredLiquidityMultiplier: 10
               collateralExposure: ["WETH", "cbBTC", "wstETH"]
               spendingCapRaw: "0"
-              chain: "LINEA"
       responses:
         "200":
           description: Configuration updated successfully
@@ -1415,7 +1412,7 @@ paths:
             example:
               walletAddress: "0x14848abF0125De79e0A5F3caA7F4EA9664a988e8"
               signature: "0x9c1efc293e476948580195863a66203816a3d437a04a92df95c1be979010031c35dbd856110eb161aa59f72cbfe49ff3a64fda3bdb094c2c321edfb13c8215161b"
-              chain: "base"
+              chain: "ETHEREUM"
       responses:
         "200":
           description: Challenge verified successfully
@@ -1600,11 +1597,9 @@ components:
           example: "0x9c1efc293e476948580195863a66203816a3d437a04a92df95c1be979010031c35dbd856110eb161aa59f72cbfe49ff3a64fda3bdb094c2c321edfb13c8215161b"
         chain:
           type: string
-          enum: [BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA, ETHEREUM]
-          nullable: true
-          default: null
-          description: When signing with a Smart Contract Wallet, specify the chain kind. This provides signature verification context
-          example: "BASE"
+          enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA]
+          description: The blockchain network for signature verification. Defaults to "ETHEREUM" if omitted. Required for Smart Contract Wallets to specify the chain on which verification is performed.
+          example: "ETHEREUM"
 
     VerifyChallengeResponse:
       type: object
@@ -1876,8 +1871,7 @@ components:
             type: integer
           description: >
             Domain IDs - must match length and index values must be relevant to
-            protocolIds and poolAddresses. For smart contract wallet validation
-            (when `chain` is set), all domain IDs must be on that same chain.
+            protocolIds and poolAddresses.
           example: [11, 11, 11]
         protocolIds:
           type: array
@@ -1933,18 +1927,6 @@ components:
             Collateral exposure symbols for the pools in the configuration, must be taken from the pool catalog from GET /v1/pools,
             unique and not empty. If you want to disable the filter, pass null.
           example: ["WETH", "cbBTC", "wstETH"]
-        chain:
-          type: string
-          enum: [BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA, ETHEREUM]
-          nullable: true
-          default: null
-          description: >
-            Optional signature validation context chain for Smart Contract Wallets and
-            predeploy contract signatures (ERC-6492). Use this when the signer is a
-            smart contract wallet that may not yet be deployed. When provided, every
-            value in `domainIds` must match this chain's domain ID. Leave `null` for
-            EOAs or when no additional chain context is required.
-          example: "BASE"
 
     CreateOrUpdateConfigResponse:
       type: object
@@ -3154,7 +3136,7 @@ components:
         message: "Invalid signature for address '0x1234567890123456789012345678901234567890': Config signature verification failed"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
-      
+
     NotAnEvmAddress:
       summary: Not an EVM address
       value:
@@ -3399,7 +3381,13 @@ components:
         retryAfterSeconds: null
 
     ConfigProtocolsPoolsAndDomains:
-      summary: Config arrays length mismatch (domain IDs, protocol IDs, pool addresses)
+      summary: Invalid configuration arrays (covers length mismatch, empty arrays, unsupported pools, and contract wallet rejected domain IDs)
+      description: |
+        Returned for any of the following validation failures:
+        - Array lengths of domainIds, protocolIds, and poolAddresses do not match
+        - Any array is empty (at least 1 element required in each)
+        - One or more pool addresses are not supported
+        - Contract wallet signature was rejected on one or more chains in domainIds: "Contract wallets configs can only contain chains verified by supported signature. Found rejected domain IDs: $unsupportedDomainIds"
       value:
         code: "ILLEGAL_ARGUMENT_ERROR"
         internalCode: "INVALID_PROTOCOLS_POOLS_AND_DOMAINS"
