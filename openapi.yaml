@@ -1598,6 +1598,8 @@ components:
         chain:
           type: string
           enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA]
+          nullable: true
+          default: "ETHEREUM"
           description: The blockchain network for signature verification. Defaults to "ETHEREUM" if omitted. Required for Smart Contract Wallets to specify the chain on which verification is performed.
           example: "ETHEREUM"
 
