@@ -286,6 +286,15 @@ paths:
           $ref: "#/components/responses/UnauthorizedNoHeader"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Signature or nonce already used (replay)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                depositSignatureAlreadyUsed:
+                  $ref: "#/components/examples/DepositSignatureAlreadyUsed"
         "429":
           $ref: "#/components/responses/RateLimitExceeded"
         "500":
@@ -588,6 +597,8 @@ paths:
               examples:
                 withdrawalNotAllowed:
                   $ref: "#/components/examples/WithdrawalNotAllowed"
+                withdrawalSignatureAlreadyUsed:
+                  $ref: "#/components/examples/WithdrawalSignatureAlreadyUsed"
         "429":
           $ref: "#/components/responses/RateLimitExceeded"
         "500":
@@ -3348,6 +3359,24 @@ components:
         code: "CONFLICT_ERROR"
         internalCode: "WITHDRAWAL_NOT_ALLOWED"
         message: "Withdrawal not allowed: Withdrawals from AAVE on LINEA are not allowed while a card refill is in progress."
+        requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
+        retryAfterSeconds: null
+
+    DepositSignatureAlreadyUsed:
+      summary: Deposit signature or nonce already used (replay)
+      value:
+        code: "CONFLICT_ERROR"
+        internalCode: "SIGNATURE_ALREADY_USED"
+        message: "This DEPOSIT signature (or nonce) has already been used"
+        requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
+        retryAfterSeconds: null
+
+    WithdrawalSignatureAlreadyUsed:
+      summary: Withdrawal signature already used (replay)
+      value:
+        code: "CONFLICT_ERROR"
+        internalCode: "SIGNATURE_ALREADY_USED"
+        message: "This WITHDRAW signature (or nonce) has already been used"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
