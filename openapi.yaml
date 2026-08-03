@@ -742,6 +742,8 @@ paths:
         - `domainIds[1]`, `protocolIds[1]`, `poolAddresses[1]` = second pool
         - And so on...
 
+        **Array Limits**: `domainIds`, `protocolIds`, and `poolAddresses` may each contain at most 200 entries. Additionally, the `(domainId, protocolId, poolAddress)` triple at each index must be unique across the request - duplicate entries are rejected.
+
         **Domain IDs**:
         - `11` = LINEA
         - `6` = BASE
@@ -1885,25 +1887,30 @@ components:
           description: Token symbol to configure (must be uppercase)
         domainIds:
           type: array
+          maxItems: 200
           items:
             type: integer
           description: >
             Domain IDs - must match length and index values must be relevant to
-            protocolIds and poolAddresses.
+            protocolIds and poolAddresses. Maximum 200 entries. The
+            (domainId, protocolId, poolAddress) triple at each index must be
+            unique - the same pool cannot be configured twice for the same domain.
           example: [11, 11, 11]
         protocolIds:
           type: array
+          maxItems: 200
           items:
             type: integer
             enum: [0, 1, 2]
-          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler) - must match length and index values must be relevant to domainIds and poolAddresses
+          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler) - must match length and index values must be relevant to domainIds and poolAddresses. Maximum 200 entries.
           example: [0, 1, 2]
         poolAddresses:
           type: array
+          maxItems: 200
           items:
             type: string
             pattern: "^0x[a-fA-F0-9]{40}$"
-          description: Pool contract addresses (must be checksummed per EIP-55) - must match length and index values must be relevant to domainIds and protocolIds Each pool address must be unique within this configuration. The same pool cannot be included more than once.
+          description: Pool contract addresses (must be checksummed per EIP-55) - must match length and index values must be relevant to domainIds and protocolIds. Maximum 200 entries. The (domainId, protocolId, poolAddress) triple at each index must be unique - the same pool cannot be included more than once for the same domain and protocol.
         signature:
           type: string
           pattern: "^0x[a-fA-F0-9]{130}$"
@@ -3417,11 +3424,13 @@ components:
         retryAfterSeconds: null
 
     ConfigProtocolsPoolsAndDomains:
-      summary: Invalid configuration arrays (covers length mismatch, empty arrays, unsupported pools, and contract wallet rejected domain IDs)
+      summary: Invalid configuration arrays (covers length mismatch, empty arrays, oversized arrays, duplicate entries, unsupported pools, and contract wallet rejected domain IDs)
       description: |
         Returned for any of the following validation failures:
         - Array lengths of domainIds, protocolIds, and poolAddresses do not match
         - Any array is empty (at least 1 element required in each)
+        - Arrays exceed the maximum allowed size of 200 entries
+        - Arrays contain duplicate (domainId, protocolId, poolAddress) entries
         - One or more pool addresses are not supported
         - Contract wallet signature was rejected on one or more chains in domainIds: "Contract wallets configs can only contain chains verified by supported signature. Found rejected domain IDs: $unsupportedDomainIds"
       value:
