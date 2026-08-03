@@ -281,6 +281,8 @@ paths:
                   $ref: "#/components/examples/InsufficientBalance"
                 depositInvalidSignature:
                   $ref: "#/components/examples/DepositInvalidSignature"
+                depositInvalidNonce:
+                  $ref: "#/components/examples/DepositInvalidNonce"
 
         "401":
           $ref: "#/components/responses/UnauthorizedNoHeader"
@@ -485,7 +487,7 @@ paths:
 
         `Amount` must be at least 0.1 (stablecoin) of the token to cover on-behalf transaction gas fees and no more than the available balance in the specified pool. This value is specified in raw units (e.g., 6 decimals for USDC). Token decimals are included in the `token` object of `/v1/balances/{walletAddress}` endpoint for reference.
 
-        `Signature` must be of length 132 (0x + 130 characters) and signed by the wallet address associated with the **JWT token**.
+        `Signature` must be a `0x`-prefixed hex string signed by the wallet address associated with the **JWT token**. For a standard EOA wallet this is 132 characters (0x + 130 hex characters). **Smart contract wallets are also supported** (e.g. multisig, passkey wallets) via EIP-1271 (`isValidSignature`) verification, so the signature may be longer than 132 characters in that case — up to a maximum of 4096 hex characters.
 
         **Rate limiting**: 1 request per 3 seconds per client IP. Excess requests receive HTTP `429` with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers (see `RateLimitExceeded` response).
 
@@ -581,6 +583,8 @@ paths:
                   $ref: "#/components/examples/ProtocolNotFound"
                 failedWithdrawSignatureValidation:
                   $ref: "#/components/examples/FailedWithdrawSignatureValidation"
+                withdrawalInvalidSignature:
+                  $ref: "#/components/examples/WithdrawalInvalidSignature"
                 insufficientBalance:
                   $ref: "#/components/examples/InsufficientBalance"
 
@@ -1829,8 +1833,11 @@ components:
           example: "1700000100"
         signature:
           type: string
-          pattern: "^0x[a-fA-F0-9]{130}$"
-          description: EIP-712 signature for withdrawal authorization
+          pattern: "^0x[a-fA-F0-9]{1,4096}$"
+          description: >
+            EIP-712 signature for withdrawal authorization. 130 hex characters (0x + 130) for a
+            standard EOA wallet; smart contract wallets (EIP-1271, e.g. multisig, passkey wallets)
+            may produce longer signatures, up to 4096 hex characters.
         poolContract:
           type: string
           pattern: "^0x[a-fA-F0-9]{40}$"
@@ -3326,10 +3333,42 @@ components:
 
     DepositInvalidSignature:
       summary: Invalid deposit signature
+      description: >-
+        Deposits only support EOA wallets: the signature must be exactly 132 characters
+        (0x + 130 hex characters). This shape is checked before any other processing (including the
+        replay-check lookup); a signature that is valid ECDSA-shaped but fails cryptographic
+        verification instead returns "Deposit signature verification failed".
       value:
         code: "ILLEGAL_ARGUMENT_ERROR"
         internalCode: "INVALID_SIGNATURE"
-        message: "Invalid signature for address '0x1234567890123456789012345678901234567890': Deposit signature must be 132 characters long and start with '0x'"
+        message: "Invalid signature for address '0x1234567890123456789012345678901234567890': Signature must be a 0x-prefixed 130-character hex string"
+        requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
+        retryAfterSeconds: null
+
+    DepositInvalidNonce:
+      summary: Invalid deposit nonce format
+      description: >-
+        The nonce is a bytes32 EIP-712 struct field: 64 hex characters (0x prefix optional). Checked
+        before any other processing, including the replay-check lookup.
+      value:
+        code: "ILLEGAL_ARGUMENT_ERROR"
+        internalCode: "ILLEGAL_ARGUMENT"
+        message: "Illegal argument: Nonce must be a 32-byte (64 hex character) value"
+        requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
+        retryAfterSeconds: null
+
+    WithdrawalInvalidSignature:
+      summary: Invalid withdrawal signature
+      description: >-
+        Withdrawals accept EOA signatures (132 characters) as well as smart-contract-wallet (EIP-1271,
+        e.g. multisig, passkey wallets) signatures, which may be longer - up to a cap of 4096 hex
+        characters. This shape is checked before any other processing (including the replay-check
+        lookup); a signature within the size limit but that fails cryptographic verification instead
+        returns "Withdrawal signature verification failed".
+      value:
+        code: "ILLEGAL_ARGUMENT_ERROR"
+        internalCode: "INVALID_SIGNATURE"
+        message: "Invalid signature for address '0x1234567890123456789012345678901234567890': Signature must be a 0x-prefixed hex string of at most 4096 characters"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
