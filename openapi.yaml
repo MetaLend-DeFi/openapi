@@ -3371,19 +3371,29 @@ components:
 
     DepositSignatureAlreadyUsed:
       summary: Deposit signature or nonce already used (replay)
+      description: >-
+        If the conflicting deposit belongs to the same wallet making the request (e.g. a client
+        retrying after a timeout on the original call), the message includes the original
+        transaction's trackingId so it can be recovered via GET /deposits/{trackingId}. If the
+        conflict belongs to a different wallet, the trackingId is omitted.
       value:
         code: "CONFLICT_ERROR"
         internalCode: "SIGNATURE_ALREADY_USED"
-        message: "This DEPOSIT signature (or nonce) has already been used"
+        message: "This DEPOSIT signature (or nonce) has already been used, trackingId: 2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
     WithdrawalSignatureAlreadyUsed:
       summary: Withdrawal signature already used (replay)
+      description: >-
+        If the conflicting withdrawal belongs to the same wallet making the request (e.g. a client
+        retrying after a timeout on the original call), the message includes the original
+        transaction's trackingId so it can be recovered via GET /withdrawals/{trackingId}. If the
+        conflict belongs to a different wallet, the trackingId is omitted.
       value:
         code: "CONFLICT_ERROR"
         internalCode: "SIGNATURE_ALREADY_USED"
-        message: "This WITHDRAW signature (or nonce) has already been used"
+        message: "This WITHDRAW signature (or nonce) has already been used, trackingId: 2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
