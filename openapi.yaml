@@ -89,7 +89,7 @@ paths:
 
         These fields are **always required** regardless of deposit method:
         - `token`: The symbol of the deposit token (e.g., "USDC", "USDT", "MUSD", "RLUSD", "USDG", "USDE", "PYUSD")
-        - `walletAddress`: The user address making the deposit (must match JWT token). For signature-based (EIP-3009) deposits, only EOAs are supported since the required signature must be a standard 132-character ECDSA signature. Smart contract wallets (with standard signature length) can deposit via the approval-based method instead.
+        - `walletAddress`: The user address making the deposit (must match JWT token). Only signatures with standard 132 length are supported for signature-based deposits (usually EOAs or smart wallets with 1271 standard), otherwise you need to use approval-based deposits.
         - `amount`: The amount to deposit in token's raw unit (e.g., for USDC with 6 decimals, "1000000" = 1 USDC). Token details can be found in the `GET /v1/pools` endpoint. Minimum deposit amount is 0.1 of the token to cover gas fees for on behalf transaction.
 
         ## Deposit Methods
