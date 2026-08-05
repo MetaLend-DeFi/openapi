@@ -89,7 +89,7 @@ paths:
 
         These fields are **always required** regardless of deposit method:
         - `token`: The symbol of the deposit token (e.g., "USDC", "USDT", "MUSD", "RLUSD", "USDG", "USDE", "PYUSD")
-        - `walletAddress`: The user address making the deposit (must match JWT token). Currently only EOAs are supported (no smart contract wallets).
+        - `walletAddress`: The user address making the deposit (must match JWT token). Only signatures with standard 132 length are supported for signature-based deposits (usually EOAs or smart wallets with 1271 standard), otherwise you need to use approval-based deposits.
         - `amount`: The amount to deposit in token's raw unit (e.g., for USDC with 6 decimals, "1000000" = 1 USDC). Token details can be found in the `GET /v1/pools` endpoint. Minimum deposit amount is 0.1 of the token to cover gas fees for on behalf transaction.
 
         ## Deposit Methods
@@ -283,6 +283,8 @@ paths:
                   $ref: "#/components/examples/DepositInvalidSignature"
                 depositInvalidNonce:
                   $ref: "#/components/examples/DepositInvalidNonce"
+                depositSourceChainNotInConfig:
+                  $ref: "#/components/examples/DepositSourceChainNotInConfig"
 
         "401":
           $ref: "#/components/responses/UnauthorizedNoHeader"
@@ -3354,6 +3356,27 @@ components:
         code: "ILLEGAL_ARGUMENT_ERROR"
         internalCode: "ILLEGAL_ARGUMENT"
         message: "Illegal argument: Nonce must be a 32-byte (64 hex character) value"
+        requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
+        retryAfterSeconds: null
+
+    DepositSourceChainNotInConfig:
+      summary: Approval-based deposit chain not covered by the wallet's config signature
+      description: >-
+        Approval-based deposits (requests that omit `signature`, `validAfter`, `validBefore`, and
+        `nonce`, relying on an on-chain `approve()` instead — used by both EOA and smart-contract
+        wallets, required for tokens without EIP-3009 signature-based approvals, and also usable by
+        choice for tokens that do support it) carry no per-deposit signature, so nothing else proves
+        the wallet's config signature is valid on this specific source chain. If the chain is not
+        already part of the wallet's config (set via /config), the config signature is re-checked
+        against it directly (EIP-1271/ERC-6492); for a smart-contract wallet this check is chain-scoped
+        and not transferable, since it depends on whether that wallet address is deployed/valid on this
+        particular chain. If it fails, the deposit would never resolve in the deposit rebalancer, so it
+        is rejected upfront rather than left to fail later. Add this chain to the wallet's config first
+        (see PUT /v1/config) or deposit on a chain already covered by it.
+      value:
+        code: "ILLEGAL_ARGUMENT_ERROR"
+        internalCode: "INVALID_SIGNATURE"
+        message: "Invalid signature for address '0x1234567890123456789012345678901234567890': Deposit chain 'ARBITRUM' is not part of the wallet's config and the config signature does not validate on this chain"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
