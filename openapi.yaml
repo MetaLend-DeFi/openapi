@@ -10,6 +10,7 @@ info:
       <li><b>User configuration</b> – register or update token-level user-rebalancer settings and fetch current wallet configs.</li>
       <li><b>Deposits</b> – create deposit intents, receive tracking IDs, and poll status through PROCESSING -> BRIDGING (cross-chain only) -> SUCCESS/FAILED/EMERGENCY_WITHDRAW. New deposits may return <b>503</b> with <b>DEPOSITS_PAUSED</b> during maintenance.</li>
       <li><b>Withdrawals</b> – submit signed withdrawal requests, receive tracking IDs, and monitor status PROCESSING -> SUCCESS/FAILED.</li>
+      <li><b>Prepare endpoints</b> – <code>POST /v1/deposits/prepare</code>, <code>POST /v1/withdrawals/prepare</code>, and <code>POST /v1/config/prepare</code> build the exact signing payload (EIP-712 typed data or signing hash) for their respective submit endpoint, running the same pre-flight validation, without moving funds or requiring JWT authentication.</li>
       <li><b>Balances</b> – query wallet-level balances and withdraw details, as well as balances in bridge progress.</li>
       <li><b>Rewards</b> – aggregated rewards and claim details per wallet.</li>
       <li><b>Pools</b> – list supported protocols (Aave, Morpho, Euler, etc.), their pools, APY breakdowns, and TVL snapshots.</li>
@@ -299,6 +300,201 @@ paths:
               examples:
                 depositSignatureAlreadyUsed:
                   $ref: "#/components/examples/DepositSignatureAlreadyUsed"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: Service unavailable — deposits paused (maintenance)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                depositsPaused:
+                  $ref: "#/components/examples/DepositsPaused"
+
+  /v1/deposits/prepare:
+    post:
+      summary: Prepare a deposit
+      description: |
+        Builds everything needed to deposit, **without submitting or signing anything**. Runs the
+        same pre-flight checks `POST /v1/deposits` would run (signed config exists for this token,
+        amount meets the chain minimum, wallet holds sufficient on-chain balance) before returning
+        anything, so a doomed request never reaches signing.
+
+        For **gasless-eligible tokens** (USDC, MUSD, PYUSD) returns a complete EIP-712
+        `ReceiveWithAuthorization` typed-data payload — sign it with your own wallet
+        (`eth_signTypedData_v4`) and pass the resulting `signature` plus the returned `nonce`,
+        `validAfter`, `validBefore`, `tokenName`, and `tokenVersion` to `POST /v1/deposits`.
+
+        For **approval-only tokens** (USDT, RLUSD, USDG, USDE) — or when `method: "approval"` is
+        passed explicitly — returns on-chain `approve()` parameters instead (`tokenAddress`,
+        `spender`, `amount`, `chainId`). Your wallet must broadcast that approval itself; this
+        endpoint has no RPC access and cannot do it for you. Then call `POST /v1/deposits` with no
+        signature fields.
+
+        `method` may be omitted to auto-select (`"signature"` for gasless-eligible tokens, else
+        `"approval"`), or passed explicitly. Requesting `method: "signature"` for a token that
+        doesn't support it returns `400 TOKEN_NOT_SUPPORTED_FOR_SIGNATURE_BASED_DEPOSIT`.
+
+        A fixed on-behalf gas fee (`fee` in the response, also available standalone via
+        `GET /v1/transaction-costs/{token}`) is deducted from `amount` before the rebalancer credits
+        it — `expectedCreditedAmountRaw` is what will actually show up in
+        `GET /v1/balances/{walletAddress}` after the deposit lands, not the full `amount` sent.
+
+        **This endpoint does not require JWT authentication** — it does not move funds or mutate any
+        state, so only an API key is required. `POST /v1/deposits` (the actual submission) still
+        requires a JWT proving ownership of `walletAddress`.
+
+        **Rate limiting**: 1 request per 6 seconds per client IP. Excess requests receive HTTP `429`
+        with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`
+        headers (see `RateLimitExceeded` response).
+      operationId: prepareDeposit
+      tags:
+        - Deposits
+      security:
+        - ApiKeyAuth: []
+          OriginHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrepareDepositRequest"
+            examples:
+              signatureEligibleUsdc:
+                summary: USDC on Linea — auto-selects the signature flow
+                value:
+                  chain: "LINEA"
+                  token: "USDC"
+                  walletAddress: "0x1234567890123456789012345678901234567890"
+                  amount: "1000000"
+              approvalOnlyUsdt:
+                summary: USDT on Ethereum — always approval-only
+                value:
+                  chain: "ETHEREUM"
+                  token: "USDT"
+                  walletAddress: "0x1234567890123456789012345678901234567890"
+                  amount: "1000000"
+              forcedApprovalForSmartWallet:
+                summary: USDC on Base, forcing approval flow (e.g. for a smart-contract wallet)
+                value:
+                  chain: "BASE"
+                  token: "USDC"
+                  walletAddress: "0x1234567890123456789012345678901234567890"
+                  amount: "2000000"
+                  method: "approval"
+      responses:
+        "200":
+          description: Deposit prepared successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrepareDepositResponse"
+              examples:
+                signatureMethod:
+                  summary: USDC — sign the returned typedData
+                  value:
+                    method: "signature"
+                    walletAddress: "0x1234567890123456789012345678901234567890"
+                    rebalancerAddress: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+                    chain: "LINEA"
+                    token: "USDC"
+                    amount: "1000000"
+                    tokenName: "USD Coin"
+                    tokenVersion: "2"
+                    nonce: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                    validAfter: "1699999995"
+                    validBefore: "1700000240"
+                    typedData:
+                      domain:
+                        name: "USD Coin"
+                        version: "2"
+                        chainId: 59144
+                        verifyingContract: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                      types:
+                        EIP712Domain:
+                          - name: "name"
+                            type: "string"
+                          - name: "version"
+                            type: "string"
+                          - name: "chainId"
+                            type: "uint256"
+                          - name: "verifyingContract"
+                            type: "address"
+                        ReceiveWithAuthorization:
+                          - name: "from"
+                            type: "address"
+                          - name: "to"
+                            type: "address"
+                          - name: "value"
+                            type: "uint256"
+                          - name: "validAfter"
+                            type: "uint256"
+                          - name: "validBefore"
+                            type: "uint256"
+                          - name: "nonce"
+                            type: "bytes32"
+                      primaryType: "ReceiveWithAuthorization"
+                      message:
+                        from: "0x1234567890123456789012345678901234567890"
+                        to: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+                        value: "1000000"
+                        validAfter: "1699999995"
+                        validBefore: "1700000240"
+                        nonce: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                    fee:
+                      depositCostRaw: "100"
+                      depositCostFormatted: "0.0001"
+                    expectedCreditedAmountRaw: "999900"
+                approvalMethod:
+                  summary: USDT — broadcast approve() yourself, then submit_deposit with no signature
+                  value:
+                    method: "approval"
+                    walletAddress: "0x1234567890123456789012345678901234567890"
+                    rebalancerAddress: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+                    chain: "ETHEREUM"
+                    token: "USDT"
+                    amount: "1000000"
+                    approval:
+                      tokenAddress: "0xdac17f958d2ee523a2206206994597c13d831ec7"
+                      spender: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+                      amount: "1000000"
+                      chainId: 1
+                    fee:
+                      depositCostRaw: "100"
+                      depositCostFormatted: "0.0001"
+                    expectedCreditedAmountRaw: "999900"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                walletAddressBlank:
+                  $ref: "#/components/examples/WalletAddressBlank"
+                invalidAddressFormat:
+                  $ref: "#/components/examples/InvalidAddressFormat"
+                invalidAddressCheckSum:
+                  $ref: "#/components/examples/InvalidAddressCheckSum"
+                tokenNotSupported:
+                  $ref: "#/components/examples/TokenNotSupported"
+                chainBlank:
+                  $ref: "#/components/examples/ChainBlank"
+                chainNotSupported:
+                  $ref: "#/components/examples/ChainNotSupported"
+                amountTooLow:
+                  $ref: "#/components/examples/AmountTooLow"
+                signatureNotAllowed:
+                  $ref: "#/components/examples/SignatureNotAllowed"
+                insufficientBalance:
+                  $ref: "#/components/examples/InsufficientBalance"
+                depositSourceChainNotInConfig:
+                  $ref: "#/components/examples/DepositSourceChainNotInConfig"
+        "401":
+          $ref: "#/components/responses/UnauthorizedNoHeader"
         "429":
           $ref: "#/components/responses/RateLimitExceeded"
         "500":
@@ -610,6 +806,151 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /v1/withdrawals/prepare:
+    post:
+      summary: Prepare a withdrawal
+      description: |
+        Builds the EIP-712 typed-data payload to sign for withdrawing from a specific pool,
+        **without submitting or signing anything**. Looks up the pool's current balance, resolves
+        `amount`, generates a short-lived `deadline`, and runs the same checks
+        `POST /v1/withdrawals` would run (sufficient balance, live pool liquidity) before returning
+        anything, so a doomed request never reaches signing.
+
+        Omit `amount` (or leave it out entirely) to withdraw the pool's entire balance — this uses
+        the `maxUint256` sentinel convention (matching `GET /v1/balances/{walletAddress}`'s own
+        `MAX` handling) rather than the exact current balance, which avoids stale-balance/rounding
+        failures. The response's `amount` reflects this: it is the literal `maxUint256` sentinel
+        when omitted, not the resolved balance — sign and submit that value as-is.
+
+        `chain` is required: the same pool contract address can exist on multiple chains (e.g. Aave
+        reuses one address across Polygon/Arbitrum/Avalanche/Optimism), so `poolContract` alone
+        cannot disambiguate a wallet holding balance in that pool on more than one of those chains.
+
+        A fixed on-behalf gas fee (`fee` in the response, also available standalone via
+        `GET /v1/transaction-costs/{token}`) is deducted from the withdrawn amount before it reaches
+        your wallet — `expectedReceivedAmountRaw` is what will actually arrive, computed against the
+        resolved pool balance when `amount` was omitted.
+
+        Sign `typedData` (`domain` + `types` + `message`) with `eth_signTypedData_v4` and pass the
+        resulting `signature`, plus `chain`, `token`, `walletAddress`, `amount`, `deadline`, and
+        `poolContract` from this response, to `POST /v1/withdrawals`.
+
+        **This endpoint does not require JWT authentication** — it does not move funds or mutate any
+        state, so only an API key is required. `POST /v1/withdrawals` (the actual submission) still
+        requires a JWT proving ownership of `walletAddress`.
+
+        **Rate limiting**: 1 request per 3 seconds per client IP. Excess requests receive HTTP `429`
+        with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`
+        headers (see `RateLimitExceeded` response).
+      operationId: prepareWithdrawal
+      tags:
+        - Withdrawals
+      security:
+        - ApiKeyAuth: []
+          OriginHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrepareWithdrawalRequest"
+            examples:
+              explicitAmount:
+                summary: Withdraw a specific amount of USDC from Aave on Linea
+                value:
+                  chain: "LINEA"
+                  token: "USDC"
+                  walletAddress: "0x1234567890123456789012345678901234567890"
+                  poolContract: "0xc47b8C00b0f69a36fa203Ffeac0334874574a8Ac"
+                  amount: "500000"
+              fullBalance:
+                summary: Withdraw the pool's entire balance (omit amount)
+                value:
+                  chain: "ETHEREUM"
+                  token: "USDC"
+                  walletAddress: "0x1234567890123456789012345678901234567890"
+                  poolContract: "0xdd0f28e19c1780eb6396170735d45153d261490d"
+      responses:
+        "200":
+          description: Withdrawal prepared successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrepareWithdrawalResponse"
+              example:
+                walletAddress: "0x1234567890123456789012345678901234567890"
+                chain: "LINEA"
+                token: "USDC"
+                poolContract: "0xc47b8C00b0f69a36fa203Ffeac0334874574a8Ac"
+                amount: "500000"
+                deadline: "1700000240"
+                typedData:
+                  domain:
+                    name: "MetaLend Rebalancing"
+                    version: "4.0.0"
+                    chainId: 59144
+                    verifyingContract: "0x971ad06e6fde83b0265bd3ced5f5eaf30e269962"
+                  types:
+                    Withdrawal:
+                      - name: "token"
+                        type: "address"
+                      - name: "poolContract"
+                        type: "address"
+                      - name: "amount"
+                        type: "uint256"
+                      - name: "deadline"
+                        type: "uint256"
+                  primaryType: "Withdrawal"
+                  message:
+                    token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                    poolContract: "0xc47b8C00b0f69a36fa203Ffeac0334874574a8Ac"
+                    amount: "500000"
+                    deadline: "1700000240"
+                fee:
+                  withdrawCostRaw: "50"
+                  withdrawCostFormatted: "0.00005"
+                expectedReceivedAmountRaw: "499950"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                walletAddressBlank:
+                  $ref: "#/components/examples/WalletAddressBlank"
+                invalidAddressFormat:
+                  $ref: "#/components/examples/InvalidAddressFormat"
+                invalidAddressCheckSum:
+                  $ref: "#/components/examples/InvalidAddressCheckSum"
+                tokenNotSupported:
+                  $ref: "#/components/examples/TokenNotSupported"
+                chainBlank:
+                  $ref: "#/components/examples/ChainBlank"
+                chainNotSupported:
+                  $ref: "#/components/examples/ChainNotSupported"
+                amountTooLow:
+                  $ref: "#/components/examples/AmountTooLow"
+                protocolNotFound:
+                  $ref: "#/components/examples/ProtocolNotFound"
+                insufficientBalance:
+                  $ref: "#/components/examples/InsufficientBalance"
+        "401":
+          $ref: "#/components/responses/UnauthorizedNoHeader"
+        "409":
+          description: Withdrawal not allowed or insufficient live pool liquidity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                withdrawalNotAllowed:
+                  $ref: "#/components/examples/WithdrawalNotAllowed"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /v1/withdrawals/{trackingId}:
     get:
       summary: Get withdrawal status
@@ -881,6 +1222,143 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           description: Conflict - config update not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                updateConfigRejectedBridgeInProgress:
+                  $ref: "#/components/examples/UpdateConfigRejectedBridgeInProgress"
+                updateConfigRejectedRefillInProgress:
+                  $ref: "#/components/examples/UpdateConfigRejectedRefillInProgress"
+                updateConfigRejectedPoolWithBalance:
+                  $ref: "#/components/examples/UpdateConfigRejectedPoolWithBalance"
+                invalidCollateralExposureUnknownSymbols:
+                  $ref: "#/components/examples/InvalidCollateralExposureUnknownSymbols"
+                invalidCollateralExposureEmptyList:
+                  $ref: "#/components/examples/InvalidCollateralExposureEmptyList"
+                invalidCollateralExposureMaxSize:
+                  $ref: "#/components/examples/InvalidCollateralExposureMaxSize"
+                invalidCollateralExposureBlankEntry:
+                  $ref: "#/components/examples/InvalidCollateralExposureBlankEntry"
+                invalidCollateralExposureDuplicates:
+                  $ref: "#/components/examples/InvalidCollateralExposureDuplicates"
+                invalidCollateralExposureRequiresAave:
+                  $ref: "#/components/examples/InvalidCollateralExposureRequiresAave"
+                invalidCollateralExposureRequiredTvlNotMet:
+                  $ref: "#/components/examples/InvalidCollateralExposureRequiredTvlNotMet"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/config/prepare:
+    post:
+      summary: Prepare a rebalancer configuration update
+      description: |
+        Builds the signing hash for updating a wallet's rebalancer configuration, **without
+        submitting or signing anything**. Runs the same validation `PUT /v1/config` would run
+        (config array shape, spending cap rules, collateral exposure rules, in-progress
+        rebalance/refill checks, and the invariant that a config update cannot drop a pool with an
+        active balance) except signature verification — there is no signature yet — before returning
+        anything, so a doomed request never reaches signing.
+
+        Accepts the same fields as `CreateOrUpdateConfigRequest` minus `signature`. The response
+        echoes every field back alongside `hashToSign`.
+
+        **Signing**: `hashToSign` is
+        `keccak256(abi.encode(rebalancingManagerAddress, protocolIds, poolAddresses, domainIds, spendingCapRaw))`
+        — identical to the manual signature-construction steps documented on `PUT /v1/config`. Sign
+        it with `personal_sign` over its raw 32 bytes (**not** the UTF-8 text of its hex string) —
+        in viem this is `walletClient.signMessage({ account, message: { raw: hashToSign } })`. Pass
+        the resulting `signature`, plus every field from this response except `hashToSign` and
+        `signingInstructions`, to `PUT /v1/config`.
+
+        Even with a valid signature, `PUT /v1/config` can still be rejected with a `409` if a
+        rebalance or deposit is currently in progress for this wallet+token, or (USDC only) a
+        funding-cap refill is in progress — there is no read-only way to check that ahead of time,
+        so it is **not** pre-validated here; treat a `409` there as temporary and retry later.
+
+        **This endpoint does not require JWT authentication** — it does not mutate any state, so
+        only an API key is required. `PUT /v1/config` (the actual submission) still requires a JWT
+        proving ownership of `walletAddress`.
+
+        **Rate limiting**: 1 request per 6 seconds per client IP. Excess requests receive HTTP `429`
+        with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`
+        headers (see `RateLimitExceeded` response).
+      operationId: prepareConfig
+      tags:
+        - User Configuration
+      security:
+        - ApiKeyAuth: []
+          OriginHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrepareConfigRequest"
+            example:
+              walletAddress: "0x1234567890123456789012345678901234567890"
+              token: "USDC"
+              domainIds: [11, 11, 11]
+              protocolIds: [0, 1, 2]
+              poolAddresses:
+                - "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+                - "0x1111111111111111111111111111111111111111"
+                - "0x2222222222222222222222222222222222222222"
+              includeRewardsApy: true
+              requiredTvl: 5000000
+              requiredLiquidityMultiplier: 10
+              collateralExposure: ["WETH", "cbBTC", "wstETH"]
+              spendingCapRaw: "0"
+      responses:
+        "200":
+          description: Config prepared successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrepareConfigResponse"
+              example:
+                walletAddress: "0x1234567890123456789012345678901234567890"
+                rebalancingManagerAddress: "0x971ad06e6fde83b0265bd3ced5f5eaf30e269962"
+                token: "USDC"
+                domainIds: [11, 11, 11]
+                protocolIds: [0, 1, 2]
+                poolAddresses:
+                  - "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+                  - "0x1111111111111111111111111111111111111111"
+                  - "0x2222222222222222222222222222222222222222"
+                includeRewardsApy: true
+                requiredTvl: "5000000"
+                requiredLiquidityMultiplier: "10"
+                collateralExposure: ["WETH", "cbBTC", "wstETH"]
+                spendingCapRaw: "0"
+                hashToSign: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                signingInstructions: "Sign hashToSign with personal_sign over its raw 32 bytes (not the UTF-8 text of the hex string). Pass the resulting signature, plus every field above except hashToSign and signingInstructions, to PUT /v1/config."
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                walletAddressBlank:
+                  $ref: "#/components/examples/WalletAddressBlank"
+                invalidAddressFormat:
+                  $ref: "#/components/examples/InvalidAddressFormat"
+                invalidAddressCheckSum:
+                  $ref: "#/components/examples/InvalidAddressCheckSum"
+                tokenNotSupported:
+                  $ref: "#/components/examples/TokenNotSupported"
+                configProtocolsPoolsAndDomains:
+                  $ref: "#/components/examples/ConfigProtocolsPoolsAndDomains"
+                configValidationFailed:
+                  $ref: "#/components/examples/ConfigValidationFailed"
+        "401":
+          $ref: "#/components/responses/UnauthorizedNoHeader"
+        "409":
+          description: Conflict - config would drop a funded pool, or an in-progress bridge/refill
           content:
             application/json:
               schema:
@@ -1752,6 +2230,215 @@ components:
           description: Unique identifier to track deposit status
           example: "550e8400-e29b-41d4-a716-446655440000"
 
+    PrepareDepositRequest:
+      type: object
+      required:
+        - chain
+        - token
+        - walletAddress
+        - amount
+      properties:
+        chain:
+          type: string
+          enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA]
+          description: The originating chain of this deposit — where the approve() call would be broadcast, or the chain the EIP-712 signature must validate on.
+        token:
+          type: string
+          enum: [USDC, MUSD, USDT, RLUSD, USDG, USDE, PYUSD]
+          description: Token symbol (must be uppercase)
+        walletAddress:
+          type: string
+          pattern: "^0x[a-fA-F0-9]{40}$"
+          description: User's Ethereum wallet address (must be checksummed per EIP-55)
+        amount:
+          type: string
+          description: Amount in token's smallest unit (minimum 0.1 to cover gas fees)
+          example: "1000000"
+        method:
+          type: string
+          enum: [signature, approval]
+          description: >
+            Force a specific flow. Defaults to `"signature"` for gasless-eligible tokens (USDC, MUSD,
+            PYUSD), else `"approval"`. Requesting `"signature"` for a token that doesn't support it
+            returns a validation error.
+
+    DepositApprovalData:
+      type: object
+      required:
+        - tokenAddress
+        - spender
+        - amount
+        - chainId
+      properties:
+        tokenAddress:
+          type: string
+          description: ERC-20 token contract address to call approve() on
+        spender:
+          type: string
+          description: Address to approve — the wallet's rebalancer contract
+        amount:
+          type: string
+          description: Amount to approve, in the token's smallest unit
+        chainId:
+          type: integer
+          description: EVM chain ID to broadcast the approve() transaction on
+
+    DepositTypedDataDomain:
+      type: object
+      required:
+        - name
+        - version
+        - chainId
+        - verifyingContract
+      properties:
+        name:
+          type: string
+          description: Token name, read from its ERC-20 contract
+          example: "USD Coin"
+        version:
+          type: string
+          description: Token EIP-712 domain version, read from its ERC-20 contract
+          example: "2"
+        chainId:
+          type: integer
+          example: 59144
+        verifyingContract:
+          type: string
+          description: Token contract address
+          example: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+
+    DepositTypedDataMessage:
+      type: object
+      required:
+        - from
+        - to
+        - value
+        - validAfter
+        - validBefore
+        - nonce
+      properties:
+        from:
+          type: string
+          description: The depositing wallet address
+        to:
+          type: string
+          description: The wallet's rebalancer contract address (receives the authorization)
+        value:
+          type: string
+          description: Amount in token's smallest unit — same as the request's `amount`
+        validAfter:
+          type: string
+          description: Unix timestamp after which the signature is valid
+        validBefore:
+          type: string
+          description: Unix timestamp before which the signature is valid (max 5 min window)
+        nonce:
+          type: string
+          pattern: "^0x[a-fA-F0-9]{64}$"
+          description: Random 32-byte nonce generated for this authorization
+
+    DepositTypedData:
+      type: object
+      required:
+        - domain
+        - types
+        - primaryType
+        - message
+      properties:
+        domain:
+          $ref: "#/components/schemas/DepositTypedDataDomain"
+        types:
+          type: object
+          description: EIP-712 type definitions for `EIP712Domain` and `ReceiveWithAuthorization`.
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/TypeDetail"
+        primaryType:
+          type: string
+          example: "ReceiveWithAuthorization"
+        message:
+          $ref: "#/components/schemas/DepositTypedDataMessage"
+
+    PrepareDepositFee:
+      type: object
+      required:
+        - depositCostRaw
+        - depositCostFormatted
+      properties:
+        depositCostRaw:
+          type: string
+          description: On-behalf deposit gas fee in raw units, deducted from `amount` before crediting
+        depositCostFormatted:
+          type: string
+          description: On-behalf deposit gas fee, human-readable
+
+    PrepareDepositResponse:
+      type: object
+      required:
+        - method
+        - walletAddress
+        - rebalancerAddress
+        - chain
+        - token
+        - amount
+        - fee
+        - expectedCreditedAmountRaw
+      properties:
+        method:
+          type: string
+          enum: [signature, approval]
+          description: Which deposit flow this response describes
+        walletAddress:
+          type: string
+          example: "0x1234567890123456789012345678901234567890"
+        rebalancerAddress:
+          type: string
+          description: Deployed (or precomputed) rebalancer contract address for this wallet
+          example: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+        chain:
+          type: string
+        token:
+          type: string
+        amount:
+          type: string
+          description: Echoes the request's `amount`
+        approval:
+          description: Present only when `method` is `"approval"`
+          allOf:
+            - $ref: "#/components/schemas/DepositApprovalData"
+        typedData:
+          description: Present only when `method` is `"signature"`
+          allOf:
+            - $ref: "#/components/schemas/DepositTypedData"
+        tokenName:
+          type: string
+          nullable: true
+          description: Present only when `method` is `"signature"`
+          example: "USD Coin"
+        tokenVersion:
+          type: string
+          nullable: true
+          description: Present only when `method` is `"signature"`
+          example: "2"
+        nonce:
+          type: string
+          nullable: true
+          description: Present only when `method` is `"signature"` — same value as `typedData.message.nonce`
+        validAfter:
+          type: string
+          nullable: true
+          description: Present only when `method` is `"signature"`
+        validBefore:
+          type: string
+          nullable: true
+          description: Present only when `method` is `"signature"`
+        fee:
+          $ref: "#/components/schemas/PrepareDepositFee"
+        expectedCreditedAmountRaw:
+          type: string
+          description: What will actually show up in GET /v1/balances after the deposit lands (amount minus fee.depositCostRaw)
+
     DepositStatusResponse:
       type: object
       required:
@@ -1855,6 +2542,108 @@ components:
           description: Tracking ID (UUID) returned from withdrawal creation
           format: uuid
           example: "550e8400-e29b-41d4-a716-446655440000"
+
+    PrepareWithdrawalRequest:
+      type: object
+      required:
+        - chain
+        - token
+        - walletAddress
+        - poolContract
+      properties:
+        chain:
+          type: string
+          enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA]
+          description: The chain where the rebalancer holds funds in the specified pool. Must match PoolBalance.chain from GET /v1/balances/{walletAddress}.
+        token:
+          type: string
+          enum: [USDC, MUSD, USDT, RLUSD, USDG, USDE, PYUSD]
+          description: Token symbol (uppercase)
+        walletAddress:
+          type: string
+          pattern: "^0x[a-fA-F0-9]{40}$"
+          description: User's Ethereum wallet address (must be checksummed per EIP-55)
+        poolContract:
+          type: string
+          pattern: "^0x[a-fA-F0-9]{40}$"
+          description: Pool contract address to withdraw from (must be checksummed per EIP-55)
+        amount:
+          type: string
+          nullable: true
+          description: >
+            Raw amount to withdraw. Omit (or leave null) for a full withdrawal — resolved to the
+            maxUint256 sentinel, not the pool's exact current balance, which avoids
+            stale-balance/rounding failures.
+          example: "500000"
+
+    WithdrawalTypedData:
+      type: object
+      required:
+        - domain
+        - types
+        - primaryType
+        - message
+      properties:
+        domain:
+          $ref: "#/components/schemas/Domain"
+        types:
+          $ref: "#/components/schemas/Types"
+        primaryType:
+          type: string
+          example: "Withdrawal"
+        message:
+          $ref: "#/components/schemas/Value"
+
+    PrepareWithdrawalFee:
+      type: object
+      required:
+        - withdrawCostRaw
+        - withdrawCostFormatted
+      properties:
+        withdrawCostRaw:
+          type: string
+          description: On-behalf withdrawal gas fee in raw units, deducted before the funds reach the wallet
+        withdrawCostFormatted:
+          type: string
+          description: On-behalf withdrawal gas fee, human-readable
+
+    PrepareWithdrawalResponse:
+      type: object
+      required:
+        - walletAddress
+        - chain
+        - token
+        - poolContract
+        - amount
+        - deadline
+        - typedData
+        - fee
+        - expectedReceivedAmountRaw
+      properties:
+        walletAddress:
+          type: string
+          example: "0x1234567890123456789012345678901234567890"
+        chain:
+          type: string
+        token:
+          type: string
+        poolContract:
+          type: string
+        amount:
+          type: string
+          description: >
+            The amount to sign and submit. Either the request's explicit `amount`, or (when omitted)
+            the literal maxUint256 sentinel `"115792089237316195423570985008687907853269984665640564039457584007913129639935"`.
+        deadline:
+          type: string
+          description: Server-generated unix timestamp deadline (short-lived — submit promptly)
+        typedData:
+          $ref: "#/components/schemas/WithdrawalTypedData"
+        fee:
+          $ref: "#/components/schemas/PrepareWithdrawalFee"
+        expectedReceivedAmountRaw:
+          type: string
+          description: What will actually arrive in the wallet (resolved amount minus fee.withdrawCostRaw)
 
     WithdrawalStatusResponse:
       type: object
@@ -1987,6 +2776,125 @@ components:
           enum: [CREATED, UPDATED]
           description: Operation performed
           example: "CREATED"
+
+    PrepareConfigRequest:
+      type: object
+      required:
+        - walletAddress
+        - token
+        - domainIds
+        - protocolIds
+        - poolAddresses
+      properties:
+        walletAddress:
+          type: string
+          pattern: "^0x[a-fA-F0-9]{40}$"
+          description: User's Ethereum wallet address (must be checksummed per EIP-55)
+        token:
+          type: string
+          enum: [USDC, MUSD, USDT, RLUSD, USDG, USDE, PYUSD]
+          description: Token symbol to configure (must be uppercase)
+        domainIds:
+          type: array
+          maxItems: 200
+          items:
+            type: integer
+          description: Same semantics as `CreateOrUpdateConfigRequest.domainIds`.
+          example: [11, 11, 11]
+        protocolIds:
+          type: array
+          maxItems: 200
+          items:
+            type: integer
+            enum: [0, 1, 2]
+          description: Same semantics as `CreateOrUpdateConfigRequest.protocolIds`.
+          example: [0, 1, 2]
+        poolAddresses:
+          type: array
+          maxItems: 200
+          items:
+            type: string
+            pattern: "^0x[a-fA-F0-9]{40}$"
+          description: Same semantics as `CreateOrUpdateConfigRequest.poolAddresses`.
+        includeRewardsApy:
+          type: boolean
+          default: true
+        requiredTvl:
+          type: number
+          default: 0
+        requiredLiquidityMultiplier:
+          type: number
+          default: 0
+        spendingCapRaw:
+          type: string
+          default: "0"
+        collateralExposure:
+          type: array
+          nullable: true
+          default: null
+          items:
+            type: string
+          example: ["WETH", "cbBTC", "wstETH"]
+
+    PrepareConfigResponse:
+      type: object
+      required:
+        - walletAddress
+        - rebalancingManagerAddress
+        - token
+        - domainIds
+        - protocolIds
+        - poolAddresses
+        - includeRewardsApy
+        - requiredTvl
+        - requiredLiquidityMultiplier
+        - spendingCapRaw
+        - hashToSign
+        - signingInstructions
+      properties:
+        walletAddress:
+          type: string
+          example: "0x1234567890123456789012345678901234567890"
+        rebalancingManagerAddress:
+          type: string
+          description: RebalancingManager contract address — the `address` ABI-encoded into `hashToSign`
+          example: "0x971ad06e6fde83b0265bd3ced5f5eaf30e269962"
+        token:
+          type: string
+        domainIds:
+          type: array
+          items:
+            type: integer
+        protocolIds:
+          type: array
+          items:
+            type: integer
+        poolAddresses:
+          type: array
+          items:
+            type: string
+        includeRewardsApy:
+          type: boolean
+        requiredTvl:
+          type: string
+        requiredLiquidityMultiplier:
+          type: string
+        collateralExposure:
+          type: array
+          nullable: true
+          items:
+            type: string
+        spendingCapRaw:
+          type: string
+        hashToSign:
+          type: string
+          pattern: "^0x[a-fA-F0-9]{64}$"
+          description: >
+            keccak256(abi.encode(rebalancingManagerAddress, protocolIds, poolAddresses, domainIds, spendingCapRaw)).
+            Sign with `personal_sign` over its raw 32 bytes (not the UTF-8 text of the hex string).
+        signingInstructions:
+          type: string
+          description: Human-readable recap of how to sign `hashToSign` and what to submit to PUT /v1/config.
 
     GetConfigResponse:
       type: object
