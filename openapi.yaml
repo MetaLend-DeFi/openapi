@@ -758,6 +758,7 @@ paths:
         - `1` = AVALANCHE
         - `2` = OPTIMISM
         - `0` = ETHEREUM
+        - `26` = ARC
 
         **Protocol IDs**: Maps to supported protocols:
         - `0` = Aave
@@ -1281,6 +1282,7 @@ paths:
               - avalanche
               - optimism
               - linea
+              - arc
           example: base
       responses:
         "200":
@@ -1593,6 +1595,7 @@ components:
             - OPTIMISM
             - AVALANCHE
             - LINEA
+            - ARC
           example: "ETHEREUM"
 
     GetChallengeResponse:
@@ -1621,7 +1624,7 @@ components:
           example: "0x9c1efc293e476948580195863a66203816a3d437a04a92df95c1be979010031c35dbd856110eb161aa59f72cbfe49ff3a64fda3bdb094c2c321edfb13c8215161b"
         chain:
           type: string
-          enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA]
+          enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA, ARC]
           nullable: true
           default: "ETHEREUM"
           description: The blockchain network for signature verification. Defaults to "ETHEREUM" if omitted. Required for Smart Contract Wallets to specify the chain on which verification is performed.
@@ -1646,7 +1649,7 @@ components:
       properties:
         chain:
           type: string
-          enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA]
+          enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA, ARC]
           description: >
             The blockchain network for this deposit. IMPORTANT: Do NOT derive this from
             wagmi's chain.name or chain.network — those use different naming conventions.
@@ -1662,6 +1665,7 @@ components:
             - chainId 10      → "OPTIMISM"
             - chainId 43114   → "AVALANCHE"
             - chainId 59144   → "LINEA"
+            - chainId 5042    → "ARC"
         token:
           type: string
           enum: [USDC, MUSD, USDT, RLUSD, USDG, USDE, PYUSD]
@@ -1802,7 +1806,7 @@ components:
       properties:
         chain:
           type: string
-          enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA]
+          enum: [ETHEREUM, BASE, POLYGON, ARBITRUM, OPTIMISM, AVALANCHE, LINEA, ARC]
           description: >
               The blockchain network where the user's funds are located. Must match the chain returned in GET /v1/balances/{walletAddress}.
               The chain where the rebalancer holds funds in the specified pool.
@@ -3535,7 +3539,7 @@ components:
       value:
         code: "ILLEGAL_ARGUMENT_ERROR"
         internalCode: "CHAIN_NOT_SUPPORTED"
-        message: "Chain 'STX' is not supported. Supported chains: eth, base, polygon, arbitrum, optimism, avax, linea"
+        message: "Chain 'STX' is not supported. Supported chains: eth, base, polygon, arbitrum, optimism, avax, linea, arc"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
