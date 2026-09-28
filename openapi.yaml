@@ -1204,6 +1204,17 @@ paths:
           $ref: "#/components/responses/UnauthorizedNoHeader"
         "429":
           $ref: "#/components/responses/RateLimitExceeded"
+        "404":
+          description: User or rebalancer not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                userDoesNotExist:
+                  $ref: "#/components/examples/UserDoesNotExist"
+                rebalancerDoesNotExistForWallet:
+                  $ref: "#/components/examples/RebalancerDoesNotExistForWallet"
         "500":
           description: Internal error or query failed
           content:
@@ -1213,10 +1224,6 @@ paths:
               examples:
                 failedBalances:
                   $ref: "#/components/examples/FailedBalances"
-                userDoesNotExist:
-                  $ref: "#/components/examples/UserDoesNotExist"
-                rebalancerDoesNotExistForWallet:
-                  $ref: "#/components/examples/RebalancerDoesNotExistForWallet"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
@@ -1308,8 +1315,8 @@ paths:
           $ref: "#/components/responses/UnauthorizedNoHeader"
         "429":
           $ref: "#/components/responses/RateLimitExceeded"
-        "500":
-          description: Internal error
+        "404":
+          description: User or rebalancer not found
           content:
             application/json:
               schema:
@@ -1319,6 +1326,8 @@ paths:
                   $ref: "#/components/examples/UserDoesNotExist"
                 rebalancerDoesNotExistForWallet:
                   $ref: "#/components/examples/RebalancerDoesNotExistForWallet"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   /v1/transaction-costs/{token}:
     get:
@@ -1524,8 +1533,8 @@ paths:
           $ref: "#/components/responses/UnauthorizedNoHeader"
         "429":
           $ref: "#/components/responses/RateLimitExceeded"
-        "500":
-          description: Internal error
+        "404":
+          description: User or rebalancer not found
           content:
             application/json:
               schema:
@@ -1535,6 +1544,8 @@ paths:
                   $ref: "#/components/examples/UserDoesNotExist"
                 rebalancerDoesNotExistForWallet:
                   $ref: "#/components/examples/RebalancerDoesNotExistForWallet"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
 components:
   securitySchemes:
@@ -3708,7 +3719,7 @@ components:
     UserDoesNotExist:
       summary: User does not exist
       value:
-        code: "INTERNAL_ERROR"
+        code: "NOT_FOUND_ERROR"
         internalCode: "USER_DOES_NOT_EXIST"
         message: "User does not exist for wallet address '0x1234567890123456789012345678901234567890'"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
@@ -3717,7 +3728,7 @@ components:
     RebalancerDoesNotExistForWallet:
       summary: Rebalancer does not exist for wallet
       value:
-        code: "INTERNAL_ERROR"
+        code: "NOT_FOUND_ERROR"
         internalCode: "REBALANCER_DOES_NOT_EXIST_FOR_WALLET"
         message: "Rebalancer does not exist for wallet address '0x1234567890123456789012345678901234567890'"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
