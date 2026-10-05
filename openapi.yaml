@@ -1926,7 +1926,7 @@ components:
           maxItems: 200
           items:
             type: integer
-            enum: [0, 1, 2]
+            enum: [0, 1, 2, 3]
           description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler, 3=AaveV4) - must match length and index values must be relevant to domainIds and poolAddresses. Maximum 200 entries.
           example: [0, 1, 2]
         poolAddresses:
