@@ -12,7 +12,7 @@ info:
       <li><b>Withdrawals</b> – submit signed withdrawal requests, receive tracking IDs, and monitor status PROCESSING -> SUCCESS/FAILED.</li>
       <li><b>Balances</b> – query wallet-level balances and withdraw details, as well as balances in bridge progress.</li>
       <li><b>Rewards</b> – aggregated rewards and claim details per wallet.</li>
-      <li><b>Pools</b> – list supported protocols (Aave, Morpho, Euler, etc.), their pools, APY breakdowns, and TVL snapshots.</li>
+      <li><b>Pools</b> – list supported protocols (Aave, Morpho, Euler, AaveV4, etc.), their pools, APY breakdowns, and TVL snapshots.</li>
       <li><b>Transaction Costs</b> – current deposit/withdraw on-behalf transaction fees and minimum amounts by chain.</li>
       <li><b>AI Agent Guide</b> – Markdown flow guide at <code>/SKILL.md</code> with signing formats, wizard requirements, and known integration gotchas.</li>
     </ul>
@@ -336,7 +336,7 @@ paths:
         **Response Details:**
         When successful, the response includes:
         - Current deposit status ("SUCCESS")
-        - Target protocol name (e.g., "Aave", "Morpho", "Euler") where funds were deposited
+        - Target protocol name (e.g., "Aave", "Morpho", "Euler", "AaveV4") where funds were deposited
         - Pool/vault contract address receiving the funds
         - Blockchain network where the deposit occurred
 
@@ -442,7 +442,7 @@ paths:
 
         Withdrawals move tokens **from a pool held by the user's rebalancer contract**
         back to the user's wallet. The funds are NOT in the user's wallet — they are
-        already inside the DeFi protocol (Aave, Morpho, or Euler) deposited by the
+        already inside the DeFi protocol (Aave, Morpho, Euler, or AaveV4) deposited by the
         rebalancer.
 
         **The `chain`, `token`, `poolContract`, and available `amount` must all be
@@ -764,6 +764,7 @@ paths:
         - `0` = Aave
         - `1` = Morpho
         - `2` = Euler
+        - `3` = AaveV4 (Aave V4 hub and spoke vaults, ERC-4626)
 
         **Collateral Exposure**: Collateral exposure symbols for the pools in the configuration, must be taken from the pool catalog from GET /v1/pools, unique and not empty. If you want to disable the filter, pass null.
         example: ["WETH", "cbBTC", "wstETH"]
@@ -1035,7 +1036,7 @@ paths:
 
         This endpoint returns the initial default configuration that shows how the system is set up for the specified token. The configuration includes:
         - **Domain IDs**: Cross-chain domain identifiers for the token
-        - **Protocol IDs**: Identifiers of the supported DeFi protocols (e.g., Aave, Morpho, Euler)
+        - **Protocol IDs**: Identifiers of the supported DeFi protocols (e.g., Aave, Morpho, Euler, AaveV4)
         - **Pool Contracts**: Smart contract addresses for the respective pools
         - **Rebalancing Manager Address**: The address of the rebalancing manager contract
 
@@ -1083,7 +1084,7 @@ paths:
       description: |
         Retrieves comprehensive information about supported DeFi protocols, pools, Total Value Locked (TVL), and Annual Percentage Yield (APY) data on supported networks.<br><br>
 
-        The response is a flat list of pools across supported protocols (Aave, Morpho, Euler) and tokens (USDC, MUSD, USDT, RLUSD, USDG, USDE, PYUSD). Each pool includes protocol metadata, pool address/name, underlying token details, TVL, liquidity, collateral exposure, APY breakdowns, signing metadata, and blacklist status.<br><br>
+        The response is a flat list of pools across supported protocols (Aave, Morpho, Euler, AaveV4) and tokens (USDC, MUSD, USDT, RLUSD, USDG, USDE, PYUSD). Each pool includes protocol metadata, pool address/name, underlying token details, TVL, liquidity, collateral exposure, APY breakdowns, signing metadata, and blacklist status.<br><br>
 
         **APY Information**: The APY data includes native lending rates, reward provider APYs (e.g., MERKLE, BREVIS), and total combined APY. All APY values are formatted to 2 decimal places and represent 7-day average market rates adjusted by fees.<br><br>
 
@@ -1790,7 +1791,7 @@ components:
         protocol:
           type: string
           nullable: true
-          enum: [Aave, Morpho, Euler]
+          enum: [Aave, Morpho, Euler, AaveV4]
           description: Target protocol once known; may be null while still in `PROCESSING`.
           example: "Aave"
         pool:
@@ -1925,8 +1926,8 @@ components:
           maxItems: 200
           items:
             type: integer
-            enum: [0, 1, 2]
-          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler) - must match length and index values must be relevant to domainIds and poolAddresses. Maximum 200 entries.
+            enum: [0, 1, 2, 3]
+          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler, 3=AaveV4) - must match length and index values must be relevant to domainIds and poolAddresses. Maximum 200 entries.
           example: [0, 1, 2]
         poolAddresses:
           type: array
@@ -2063,7 +2064,7 @@ components:
           example: [0, 2]
           items:
             type: integer
-          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler) - match index values of domainIds and poolAddresses
+          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler, 3=AaveV4) - match index values of domainIds and poolAddresses
         poolAddresses:
           type: array
           example: ["0xghijklghijklghijklghijklghijklghijklmnop", "0xqrstuvqrstuvqrstuvqrstuvqrstuvqrstuvwxy"]
@@ -2220,7 +2221,7 @@ components:
             contract address, which is the SAME for all tokens (USDC, USDT, RLUSD, MUSD, USDG, USDE, PYUSD)
             on a given chain. Do NOT use this field alone as a unique pool identifier —
             it must always be combined with `chain` and `underlyingToken.symbol`.
-            For Morpho and Euler, this address IS unique per pool
+            For Morpho, Euler and AaveV4, this address IS unique per pool
           example: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
         poolName:
           type: string
@@ -2249,7 +2250,7 @@ components:
           description: >
             Collateral exposure for the pool. Keys are Morpho market identifiers,
             values are the collateral token symbols for each market.
-            Null for non-Morpho pools (Aave, Euler).
+            Null for non-Morpho pools (Aave, Euler, AaveV4).
           example:
             "0x3b3769cfb1649e84374e7f0e0e46cbf9a1a39a62fa6a8b82e9e9edd1b3a3e3f7": "WETH"
             "0xa1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2": "cbBTC"
@@ -2270,7 +2271,7 @@ components:
       properties:
         protocolId:
           type: integer
-          description: Protocol ID (0=Aave, 1=Morpho, 2=Euler)
+          description: Protocol ID (0=Aave, 1=Morpho, 2=Euler, 3=AaveV4)
         poolAddress:
           type: string
           description: Pool contract address
@@ -2576,7 +2577,7 @@ components:
           description: Whether the MetaMask / card integration should be presented in project UI. Only applicable for USDC.
         protocolIds:
           type: array
-          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler) - match index values of domainIds and poolAddresses
+          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler, 3=AaveV4) - match index values of domainIds and poolAddresses
           items:
             type: integer
           example: [0, 1, 2]
@@ -2750,7 +2751,7 @@ components:
           example: "MetaLend Rebalancing"
         version:
           type: string
-          example: "4.0.0"
+          example: "4.1.0"
         chainId:
           type: integer
           example: 59144
@@ -3559,7 +3560,7 @@ components:
       value:
         code: "ILLEGAL_ARGUMENT_ERROR"
         internalCode: "INVALID_PROTOCOL"
-        message: "Protocol ID '5' is not supported. Supported protocol IDs: 0 (Aave), 1 (Morpho), 2 (Euler)"
+        message: "Protocol ID '5' is not supported. Supported protocol IDs: 0 (Aave), 1 (Morpho), 2 (Euler), 3 (AaveV4)"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
@@ -3694,7 +3695,7 @@ components:
       value:
         code: "ILLEGAL_ARGUMENT_ERROR"
         internalCode: "INVALID_POOL"
-        message: "Protocol ID '5' at position 0 is not supported. Supported protocol IDs: 0 (Aave), 1 (Morpho), 2 (Euler)"
+        message: "Protocol ID '5' at position 0 is not supported. Supported protocol IDs: 0 (Aave), 1 (Morpho), 2 (Euler), 3 (AaveV4)"
         requestId: "2c2f3dc1-d19a-49cb-b695-37d025e551b3"
         retryAfterSeconds: null
 
