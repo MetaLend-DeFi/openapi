@@ -708,6 +708,8 @@ paths:
 
         **Recommended**: Use Project Settings as a responsible user config settings. Use this project settings as a default for new users (without signed config). Treat overlapping configurations as a violation.
 
+        **Empty defaults**: For a token without saved settings, the returned `protocolIds`, `poolAddresses` and `domainIds` are the current defaults and exclude blacklisted pools. Temporarily blacklisted pools (see `blacklistReason` in `GET /v1/pools`) drop out and return once they recover, so these arrays can be empty or change between calls. Saved settings are returned as stored and may contain pools that are currently blacklisted. Check each pool against `GET /v1/pools` and do not use an empty default as a rebalancer configuration (a config needs at least one pool).
+
         **Authentication**: Requires a valid API key. The API key must be associated with a project.
 
         **Rate limiting**: 1 request per 3 seconds per client IP. Excess requests receive HTTP `429` with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers (see `RateLimitExceeded` response).
@@ -2585,7 +2587,7 @@ components:
           description: Whether the MetaMask / card integration should be presented in project UI. Only applicable for USDC.
         protocolIds:
           type: array
-          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler, 3=AaveV4) - match index values of domainIds and poolAddresses
+          description: Protocol IDs (0=Aave, 1=Morpho, 2=Euler, 3=AaveV4) - match index values of domainIds and poolAddresses. May be empty for default settings when every pool of the token is currently blacklisted.
           items:
             type: integer
           example: [0, 1, 2]
@@ -2594,7 +2596,7 @@ components:
           description: Whether the client may change `protocolIds`.
         poolAddresses:
           type: array
-          description: Pool contract addresses - match index values of domainIds and protocolIds
+          description: Pool contract addresses - match index values of domainIds and protocolIds. May be empty for default settings when every pool of the token is currently blacklisted. Saved settings may include currently blacklisted pools.
           items:
             type: string
             pattern: "^0x[a-fA-F0-9]{40}$"
@@ -2603,7 +2605,7 @@ components:
           description: Whether the client may change `poolAddresses`.
         domainIds:
           type: array
-          description: Domain IDs for configuration - match index values of protocolIds and poolAddresses
+          description: Domain IDs for configuration - match index values of protocolIds and poolAddresses. May be empty for default settings when every pool of the token is currently blacklisted.
           items:
             type: integer
         domainsUserModifiable:
