@@ -2261,6 +2261,13 @@ components:
         blacklisted:
           type: boolean
           description: Indicates whether the pool has been blacklisted (banned) due to a third party critical security issue. Blacklisted pools are deprecated and retained solely for backwards compatibility. New deposits are never routed to blacklisted pools, and all existing balances are automatically rebalanced out of such pools when possible (balance is large enough to pay on-behalf fee and there is enough liquidity to withdraw).
+        blacklistReason:
+          type: string
+          nullable: true
+          enum:
+            - SECURITY
+            - TVL_LIQUIDITY
+          description: Why the pool is blacklisted, null when it is not. SECURITY means a hardcoded ban or realized bad debt and is permanent. TVL_LIQUIDITY means the pool fell below the TVL or liquidity threshold and is automatically whitelisted again once it stays above the recovery threshold for 3 days.
 
     PoolSignData:
       type: object
